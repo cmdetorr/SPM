@@ -1,55 +1,69 @@
-//*****************************************************************************
-//
-// timers.c - Timers example.
-//
-// Copyright (c) 2012-2014 Texas Instruments Incorporated.  All rights reserved.
-// Software License Agreement
-// 
-// Texas Instruments (TI) is supplying this software for use solely and
-// exclusively on TI's microcontroller products. The software is owned by
-// TI and/or its suppliers, and is protected under applicable copyright
-// laws. You may not combine this software with "viral" open-source
-// software in order to form a larger program.
-// 
-// THIS SOFTWARE IS PROVIDED "AS IS" AND WITH ALL FAULTS.
-// NO WARRANTIES, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT
-// NOT LIMITED TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. TI SHALL NOT, UNDER ANY
-// CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
-// DAMAGES, FOR ANY REASON WHATSOEVER.
-// 
-// This is part of revision 2.1.0.12573 of the EK-TM4C123GXL Firmware Package.
-//
-//*****************************************************************************
+/*
+ * SPM Controller Code
+ *
+ * Author: Chris de Torres
+ *
+ * Program Description:
+ * This code was made to interface three RE-MAX29 motors for a Spherical Parallel Manipulator (SPM).
+ *
+ * The code uses a TM4C123G Tiva C Evaluation Board to control the three motors. Simulink is
+ * to provide the reference encoder pulse position of the motors. The controller uses a discrete PI
+ * control law running at the frequency of CONTROL_FREQ. Hardware interrupt ISR are used to keep
+ * track of the encoder pulses.
+ *
+ * The main loop of the controller is used for communication between the controller and the host
+ * program. The host program sends three 4-digit numbers in one ASCII string that represents the
+ * reference position of the motors in encoder pulses. The program returns the current position
+ * of the motors as well as the current reference positions.
+ *
+ * Input string to the controller
+ * "#### #### ####\r"
+ *   1    2    3
+ *
+ * 1 - motor A reference position
+ * 2 - motor B reference position
+ * 3 - motor C reference position
+ *
+ * Output string to the controller
+ * "#### #### #### #### #### ####\n\r"
+ *   1    2    3    4    5    6
+ *
+ * 1 - motor A current position
+ * 2 - motor B current position
+ * 3 - motor C current position
+ * 4 - motor A reference position
+ * 5 - motor B reference position
+ * 6 - motor C reference position
 
-// TODO: Write out the connection points to the microcontroller
-// Connection Pinouts
-//------------
-// Motor A
-//------------
-// PWM0 - PB7 - IC3 pin 12
-// PWM1 - PB6 - IC3 pin 16
+Microcontroller Connection Pinouts
+------------
+ Motor A
+------------
+ PWM0 - PB7
+ PWM1 - PB6
 
-// QEIA - PD7 green wire on breadboard
-// QEIB - PD6 black wire on breadboard
+ QEIA - PD7
+ QEIB - PD6
 
-//------------
-// Motor B
-//------------
-// PWM0 - PB4 - IC3 pin 12
-// PWM1 - PB5 - IC3 pin 16
+------------
+ Motor B
+------------
+ PWM0 - PB4
+ PWM1 - PB5
 
-// QEIA - PC5 orange wire on breadboard
-// QEIB - PC6 red wire on breadboard
+ QEIA - PC5
+ QEIB - PC6
 
-//------------
-// Motor C
-//------------
-// PWM0 - PE4 - IC3 pin 12
-// PWM1 - PE5 - IC3 pin 16
+------------
+ Motor C
+------------
+ PWM0 - PE4
+ PWM1 - PE5
 
-// QEIA - PA6
-// QEIB - PA5
+ QEIA - PA6
+ QEIB - PA5
+
+ */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -96,21 +110,6 @@ volatile int32_t cQEI_count = MID_POS;
 
 volatile uint32_t ui32Load;
 volatile float I_c_prev = 0;
-//*****************************************************************************
-//
-//! \addtogroup example_list
-//! <h1>Timer (timers)</h1>
-//!
-//! This example application demonstrates the use of the timers to generate
-//! periodic interrupts.  One timer is set up to interrupt once per second and
-//! the other to interrupt twice per second; each interrupt handler will toggle
-//! its own indicator on the display.
-//!
-//! UART0, connected to the Virtual Serial Port and running at 115,200, 8-N-1,
-//! is used to display messages from this application.
-//
-//*****************************************************************************
-
 
 //*****************************************************************************
 //
@@ -126,13 +125,9 @@ __error__(char *pcFilename, uint32_t ui32Line)
 
 //*****************************************************************************
 //
-// The interrupt handler for the first QEI
+// The interrupt handler for Motor A quadrature encoder
 //
 //*****************************************************************************
-// pin 6 - PHB
-// pin 7 - PHA
-// the lookup table will be different if the MSB is PHB
-
 void qeiDIntHandler(void){
 	static int8_t lookup_table[] = {0,1,-1,0,-1,0,0,1,1,0,0,-1,0,-1,1,0};
 	static uint8_t last_state = 0;
@@ -149,10 +144,9 @@ void qeiDIntHandler(void){
 
 //*****************************************************************************
 //
-// The interrupt handler for the second QEI
+// The interrupt handler for Motor B quadrature encoder
 //
 //*****************************************************************************
-
 void qeiCIntHandler(void){
 	static int8_t lookup_table[] = {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
 	static uint8_t last_state = 0;
@@ -168,10 +162,9 @@ void qeiCIntHandler(void){
 
 //*****************************************************************************
 //
-// The interrupt handler for the third QEI
+// The interrupt handler for Motor C quadrature encoder
 //
 //*****************************************************************************
-
 void qeiAIntHandler(void){
 	static int8_t lookup_table[] = {0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
 	static uint8_t last_state = 0;
@@ -187,13 +180,12 @@ void qeiAIntHandler(void){
 
 //*****************************************************************************
 //
-// The interrupt handler for the calculation of PID values.
+// Timed control ISR
+// TODO: Write a Description of the ISR
 //
 //*****************************************************************************
 void ControlIntHandler(void){
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
-	// TODO: Time this section of code
 
 	volatile float a_error, b_error, c_error;
 	volatile uint32_t Load = ui32Load;
@@ -372,8 +364,6 @@ void ConfigurePWM(void){
 //*****************************************************************************
 
 void ConfigureQEI(void){
-	// ToDO: Make all QEI hardware interrupt driven
-
 	// PD7 = NMI = Non-Maskable Interrupt = Unlock GPIO Commit Control Register
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
 	HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
@@ -479,15 +469,12 @@ int main(void){
 
     SysCtlClockSet(SYSCTL_SYSDIV_1 | SYSCTL_USE_OSC | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
-    // Used for timing blocks of code with oscilloscope
-//    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-//    GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_7);
-
     ConfigureUART();
     ConfigurePWM();
     ConfigureQEI();
     ConfigureCtrlTimer();
 
+    // Main program loop
     while(1){
 		UARTgets(RxString,32);
 		ThreeStrtoInt(RxString, &Aset, &Bset, &Cset);
