@@ -271,12 +271,12 @@ void ControlIntHandler(void){
 	}
 
 	if(c_duty >= 0){
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, load_C); // PE4
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE5
-	}
-	else{
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, load_C); // PE5
+	}
+	else{
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, load_C); // PE4
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE5
 	}
 }// end control
 
@@ -483,7 +483,8 @@ int main(void){
 		B_ref=Bset;
 		C_ref=Cset;
 
-		UARTprintf("%4d %4d %4d %4d %4d %4d\n",aQEI_count,bQEI_count,cQEI_count, Aset, Bset, Cset);
+		UARTprintf("%4d %4d %4d %4d %4d %4d\n",aQEI_count,Aset,bQEI_count,Bset,cQEI_count,Cset);
+//		UARTprintf("%4d %4d %4d\n",aQEI_count,bQEI_count,cQEI_count);
     }// end while
 
 }// end main
