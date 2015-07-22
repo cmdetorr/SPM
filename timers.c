@@ -89,8 +89,10 @@ Microcontroller Connection Pinouts
 #define PWM_FREQUENCY 18000
 #define CONTROL_FREQ 4000
 
+#define MAX_PULSE 500
+
 // PID constants
-#define Kp 1.0
+#define Kp 3.0
 #define Kd 0.0
 #define Ki 0.0
 
@@ -206,19 +208,19 @@ void ControlIntHandler(void){
     // Calculate the PID values (PWM strength)
     // TODO: Complete the PID section. Make the discrete version of this.
     a_error = A_ref - aQEI_count;
-    if(a_error >= 300.0) a_error = 300.0;
-    if(a_error <= -300.0) a_error = -300.0;
+    if(a_error >= MAX_PULSE) a_error = MAX_PULSE;
+    if(a_error <= -MAX_PULSE) a_error = -MAX_PULSE;
     P_a = Kp * a_error;
 
     b_error = B_ref - bQEI_count;
-    if(b_error >= 300.0) b_error = 300.0;
-    if(b_error <= -300.0) b_error = -300.0;
+    if(b_error >= MAX_PULSE) b_error = MAX_PULSE;
+    if(b_error <= -MAX_PULSE) b_error = -MAX_PULSE;
     P_b = Kp * b_error;
 
     // C Motor Calculation
     c_error = C_ref - cQEI_count;
-    if(c_error >= 300.0) c_error = 300.0;
-    if(c_error <= -300.0) c_error = -300.0;
+    if(c_error >= MAX_PULSE) c_error = MAX_PULSE;
+    if(c_error <= -MAX_PULSE) c_error = -MAX_PULSE;
     P_c = Kp * c_error;
 
 //    if(I_c <= MAX_ERROR && I_c >= -MAX_ERROR){
