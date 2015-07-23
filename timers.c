@@ -93,7 +93,7 @@ Microcontroller Connection Pinouts
 
 // PID constants
 #define Kp 3.0
-#define Kd 0.0
+#define Kd 2.5
 #define Ki 0.0
 
 #define MAX_ERROR 1000.0
