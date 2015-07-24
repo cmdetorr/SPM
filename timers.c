@@ -112,6 +112,7 @@ volatile int32_t bQEI_count = MID_POS;
 volatile int32_t cQEI_count = MID_POS;
 
 volatile uint32_t ui32Load;
+volatile uint8_t ui8MainLoop_cnt = 0;
 volatile float I_c_prev = 0;
 
 //*****************************************************************************
@@ -284,8 +285,41 @@ void ControlIntHandler(void){
 }// end control
 
 void interpolated_motion_handler(void){
+	TimerIntClear(TIMER0_BASE, TIMER_TIMB_TIMEOUT);
+	static int32_t old_reference = MID_POS;
+	static uint8_t oldloop_cnt = 0;
+	static uint8_t i_Ref = 0;
+	static int32_t error = 0;
+	volatile int32_t step_size = 0;
+	static int32_t A_array[10];
 
+	if(ui8MainLoop_cnt != oldloop_cnt && A_ref != old_reference){
+		// calculate error
+		error = A_ref - old_reference;
+		step_size = (error*10)/100; //TODO may need to fix this
 
+		// Fill the array up
+		A_array[0] = old_reference + step_size;
+		A_array[1] = old_reference + 2 * step_size;
+		A_array[2] = old_reference + 3 * step_size;
+		A_array[3] = old_reference + 4 * step_size;
+		A_array[4] = old_reference + 5 * step_size;
+		A_array[5] = old_reference + 6 * step_size;
+		A_array[6] = old_reference + 7 * step_size;
+		A_array[7] = old_reference + 8 * step_size;
+		A_array[8] = old_reference + 9 * step_size;
+		A_array[9] = A_ref;
+		A_ref = A_array[0];
+		old_reference = A_array[9];
+		oldloop_cnt = ui8MainLoop_cnt;
+	}
+	else{
+		i_Ref++;
+		if(i_Ref >= 10)
+			i_Ref = 10;
+
+		A_ref = A_array[i_Ref];
+	}
 }
 
 //*****************************************************************************
@@ -407,16 +441,17 @@ void ConfigureQEI(void){
 
 void ConfigureCtrlTimer(void){
     SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
     IntMasterEnable();
     TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
     TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet()/CONTROL_FREQ);
-    TimerLoadSet(TIMER0_BASE, TIMER_B, SysCtlClockGet()/SIMULINK_FREQ);
+    TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet()/SIMULINK_FREQ);
     IntEnable(INT_TIMER0A);
-    IntEnable(INT_TIMER0B);
+    IntEnable(INT_TIMER1A);
     TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-    TimerIntEnable(TIMER0_BASE, TIMER_TIMB_TIMEOUT);
+    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
     TimerEnable(TIMER0_BASE, TIMER_A);
-    TimerEnable(TIMER0_BASE, TIMER_B);
+    TimerEnable(TIMER1_BASE, TIMER_A);
 }
 
 //*****************************************************************************
@@ -495,6 +530,7 @@ int main(void){
 		B_ref=Bset;
 		C_ref=Cset;
 
+		ui8MainLoop_cnt++;
 		UARTprintf("%4d %4d %4d %4d %4d %4d\n",aQEI_count,Aset,bQEI_count,Bset,cQEI_count,Cset);
 //		UARTprintf("%4d %4d %4d\n",aQEI_count,bQEI_count,cQEI_count);
     }// end while
