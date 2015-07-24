@@ -57,6 +57,7 @@ extern uint32_t __STACK_TOP;
 //
 //*****************************************************************************
 extern void ControlIntHandler(void);
+extern void interpolated_motion_handler(void);
 extern void qeiAIntHandler(void);
 extern void qeiCIntHandler(void);
 //extern void qeiDIntHandler(void);
@@ -109,7 +110,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
 	ControlIntHandler,                    // Timer 0 subtimer A
-	IntDefaultHandler,                      // Timer 0 subtimer B
+	interpolated_motion_handler,                      // Timer 0 subtimer B
 	IntDefaultHandler,                       // Timer 1 subtimer A
 	IntDefaultHandler,                      // Timer 1 subtimer B
     IntDefaultHandler,                      // Timer 2 subtimer A

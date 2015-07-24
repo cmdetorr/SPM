@@ -88,6 +88,7 @@ Microcontroller Connection Pinouts
 
 #define PWM_FREQUENCY 18000
 #define CONTROL_FREQ 4000
+#define SIMULINK_FREQ 1000
 
 #define MAX_PULSE 500
 
@@ -282,6 +283,11 @@ void ControlIntHandler(void){
 	}
 }// end control
 
+void interpolated_motion_handler(void){
+
+
+}
+
 //*****************************************************************************
 //
 // Configure the UART and its pins.  This must be called before UARTprintf().
@@ -404,9 +410,13 @@ void ConfigureCtrlTimer(void){
     IntMasterEnable();
     TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
     TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet()/CONTROL_FREQ);
+    TimerLoadSet(TIMER0_BASE, TIMER_B, SysCtlClockGet()/SIMULINK_FREQ);
     IntEnable(INT_TIMER0A);
+    IntEnable(INT_TIMER0B);
     TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    TimerIntEnable(TIMER0_BASE, TIMER_TIMB_TIMEOUT);
     TimerEnable(TIMER0_BASE, TIMER_A);
+    TimerEnable(TIMER0_BASE, TIMER_B);
 }
 
 //*****************************************************************************
