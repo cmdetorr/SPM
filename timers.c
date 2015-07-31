@@ -86,21 +86,20 @@ Microcontroller Connection Pinouts
 #include "driverlib/qei.h"
 #include "utils/uartstdio.h"
 
-#define PWM_FREQUENCY 18000
+#define PWM_FREQUENCY 16000
 #define CONTROL_FREQ 4000
-#define SIMULINK_FREQ 1000
 
-#define MAX_PULSE 500
+#define MAX_PULSE 800
 
 // PID constants
 #define Kp 3.0
-#define Kd 2.5
-#define Ki 0.0
+#define Kd 0.0
+#define Ki 1.0
 
 #define MAX_ERROR 1000.0
-#define MID_POS 5000
-#define MAX_POS 9999
-#define UART_SPEED 921600
+#define MID_POS 50000
+#define MAX_POS 99999
+#define UART_SPEED 256000
 
 // global variables for the setpoints and current position
 volatile int32_t A_ref = MID_POS;
@@ -112,8 +111,9 @@ volatile int32_t bQEI_count = MID_POS;
 volatile int32_t cQEI_count = MID_POS;
 
 volatile uint32_t ui32Load;
-volatile uint8_t ui8MainLoop_cnt = 0;
-volatile float I_c_prev = 0;
+volatile float I_a_prev = 0.0;
+volatile float I_b_prev = 0.0;
+volatile float I_c_prev = 0.0;
 
 //*****************************************************************************
 //
@@ -134,13 +134,13 @@ __error__(char *pcFilename, uint32_t ui32Line)
 //*****************************************************************************
 void qeiDIntHandler(void){
 	static int8_t lookup_table[] = {0,1,-1,0,-1,0,0,1,1,0,0,-1,0,-1,1,0};
-	static uint8_t last_state = 0;
+	volatile static uint8_t last_state = 0;
 	volatile uint8_t status=0;
 	status = GPIOIntStatus(GPIO_PORTD_BASE,true);
 	GPIOIntClear(GPIO_PORTD_BASE,status);
 
 	uint8_t current_state = GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 6;
-	last_state = last_state << 2 | current_state;
+	last_state = (last_state << 2) | current_state;
 
 	aQEI_count = aQEI_count + lookup_table[last_state & 0b1111];
 //	aQEI_count = aQEI_count % (MAX_POS + 1);
@@ -195,132 +195,103 @@ void ControlIntHandler(void){
 	volatile uint32_t Load = ui32Load;
 	volatile float P_a, P_b, P_c; // Proportional terms
 	volatile float D_a, D_b, D_c; // Derivative terms
-	volatile float I_a, I_b, I_c; // Integral terms
+	volatile float I_a = 0.0, I_b = 0.0 , I_c = 0.0; // Integral terms
 	volatile float a_duty, b_duty, c_duty; // output of PID
 	volatile float a_mag, b_mag, c_mag;
 	volatile uint32_t load_A, load_B, load_C;
-	static float Ti = 1.0/CONTROL_FREQ;
-	static float MAX_ERROR_INV = 1.0/MAX_ERROR;
+	static float Ti = 0.00025;
+	static float MAX_ERROR_INV = 1.0/1000.0;
 
 	// Update all the PID parameters
-    volatile float acurr = aQEI_count;
-    volatile float bcurr = bQEI_count;
-    volatile float ccurr = cQEI_count;
+    volatile float acurr = (float)aQEI_count;
+    volatile float bcurr = (float)bQEI_count;
+    volatile float ccurr = (float)cQEI_count;
+    volatile float a_set = (float)A_ref;
+    volatile float b_set = (float)B_ref;
+    volatile float c_set = (float)C_ref;
 
     // Calculate the PID values (PWM strength)
     // TODO: Complete the PID section. Make the discrete version of this.
-    a_error = A_ref - aQEI_count;
-    if(a_error >= MAX_PULSE) a_error = MAX_PULSE;
-    if(a_error <= -MAX_PULSE) a_error = -MAX_PULSE;
+    a_error = (a_set - acurr);
+    if(a_error > 200.0) a_error = 200.0;
+    if(a_error < -200.0) a_error = -200.0;
     P_a = Kp * a_error;
 
-    b_error = B_ref - bQEI_count;
-    if(b_error >= MAX_PULSE) b_error = MAX_PULSE;
-    if(b_error <= -MAX_PULSE) b_error = -MAX_PULSE;
+    b_error = (b_set - bcurr);
     P_b = Kp * b_error;
 
     // C Motor Calculation
-    c_error = C_ref - cQEI_count;
-    if(c_error >= MAX_PULSE) c_error = MAX_PULSE;
-    if(c_error <= -MAX_PULSE) c_error = -MAX_PULSE;
+    c_error = (c_set - ccurr);
     P_c = Kp * c_error;
 
-//    if(I_c <= MAX_ERROR && I_c >= -MAX_ERROR){
-//    	I_c = Ki * c_error * Ti + I_c_prev;
-//    	I_c_prev = I_c;
-//    }
-//    else{
-//    	I_c = 0;
-//    	I_c_prev = 0;
+    // anti windup
+//    if (a_error <= MAX_ERROR && a_error >= -MAX_ERROR){
+//   	I_a = Ki * a_error * Ti + I_a_prev;
+//   	I_a_prev = I_a;
+//    if(I_a >= MAX_ERROR) I_a = MAX_ERROR;
+//    if(I_a <= -MAX_ERROR)I_a = -MAX_ERROR;
 //    }
 //
-//    if(I_c > MAX_ERROR) I_c = MAX_ERROR;
-//    if(I_c < -MAX_ERROR)I_c = -MAX_ERROR;
+//    if (b_error <= MAX_ERROR && b_error >= -MAX_ERROR){
+//   	I_b = Ki * b_error * Ti + I_b_prev;
+//   	I_b_prev = I_b;
+//    if(I_b >= MAX_ERROR) I_b = MAX_ERROR;
+//    if(I_b <= -MAX_ERROR)I_b = -MAX_ERROR;
+//    }
+//
+//    if (c_error <= MAX_ERROR && c_error >= -MAX_ERROR){
+//	I_c = Ki * c_error * Ti + I_c_prev;
+//	I_c_prev = I_c;
+//    if(I_c >= MAX_ERROR) I_c = MAX_ERROR;
+//    if(I_c <= -MAX_ERROR)I_c = -MAX_ERROR;
+//    }
 
-    a_duty = P_a * MAX_ERROR_INV;
-    b_duty = P_b * MAX_ERROR_INV;
-    c_duty = P_c * MAX_ERROR_INV;
+    a_duty = (P_a+I_a) * MAX_ERROR_INV;
+    b_duty = (P_b+I_b) * MAX_ERROR_INV;
+    c_duty = (P_c+I_c) * MAX_ERROR_INV;
 
     // Make an absolute value
-    if(a_duty >= 0) a_mag = a_duty;
-    else a_mag = -1.0 * a_duty;
+    a_mag = fabs(a_duty);
+    b_mag = fabs(b_duty);
+    c_mag = fabs(c_duty);
 
-    if(b_duty >= 0) b_mag = b_duty;
-    else b_mag = -1.0* b_duty;
+    load_A = (uint32_t)(a_mag * Load);
+    load_B = (uint32_t)(b_mag * Load);
+    load_C = (uint32_t)(c_mag * Load);
 
-    if(c_duty >= 0) c_mag = c_duty;
-    else c_mag = -1.0 * c_duty;
-
-    load_A = a_mag * ui32Load;
-    load_B = b_mag * ui32Load;
-    load_C = c_mag * ui32Load;
+    if(load_A >= Load-100) load_A = Load-100;
+    if(load_B >= Load-100) load_B = Load-100;
+    if(load_C >= Load-100) load_C = Load-100;
 
     // Set the PID values to the PWM
-	if (a_duty > 0){
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, load_A); 						// PB6
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, 0); 			// PB7
+	if ((a_set - acurr) < 0.0){
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, load_A); 	// PB6
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, 0); 			// PB7
 	}
 	else{
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, 0); 			// PB6
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, load_A); 	// PB7
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, 0); 			// PB6
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, load_A); 	// PB7
 	}
 
-	if(b_duty >= 0){
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0); // PB4
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, load_B); // PB5
+	if((b_set - bcurr) < 0.0){
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0); // PB4
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, load_B); // PB5
 	}
 	else{
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, load_B); // PB4
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0); // PB5
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, load_B); // PB4
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0); // PB5
 	}
 
-	if(c_duty >= 0){
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE4
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, load_C); // PE5
+	if((c_set - ccurr) < 0.0){
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE4
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, load_C); // PE5
 	}
 	else{
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, load_C); // PE4
-		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE5
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, load_C); // PE4
+		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE5
 	}
+
 }// end control
-
-void interpolated_motion_handler(void){
-	TimerIntClear(TIMER0_BASE, TIMER_TIMB_TIMEOUT);
-	static int32_t old_reference = MID_POS;
-	static uint8_t oldloop_cnt = 0;
-	static uint8_t i_Ref = 0;
-	static int32_t error = 0;
-	volatile int32_t step_size = 0;
-	static int32_t A_array[10];
-
-	if(ui8MainLoop_cnt != oldloop_cnt && A_ref != old_reference){
-		// calculate error
-		error = A_ref - old_reference;
-		step_size = (error*10)/100; //TODO may need to fix this
-
-		// Fill the array up
-		A_array[0] = old_reference + step_size;
-		A_array[1] = old_reference + 2 * step_size;
-		A_array[2] = old_reference + 3 * step_size;
-		A_array[3] = old_reference + 4 * step_size;
-		A_array[4] = old_reference + 5 * step_size;
-		A_array[5] = old_reference + 6 * step_size;
-		A_array[6] = old_reference + 7 * step_size;
-		A_array[7] = old_reference + 8 * step_size;
-		A_array[8] = old_reference + 9 * step_size;
-		A_array[9] = A_ref;
-		A_ref = A_array[0];
-		old_reference = A_array[9];
-		oldloop_cnt = ui8MainLoop_cnt;
-	}
-	else{
-		i_Ref++;
-		if(i_Ref >= 10)
-			i_Ref = 10;
-
-		A_ref = A_array[i_Ref];
-	}
-}
 
 //*****************************************************************************
 //
@@ -356,12 +327,23 @@ void ConfigurePWM(void){
 	volatile uint32_t pulse_per_period;
 
 	SysCtlPWMClockSet(SYSCTL_PWMDIV_1);			// Initialize the PWM clock
+	SysCtlDelay(3);
+
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
+	SysCtlDelay(3);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
+	SysCtlDelay(3);
 
-	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);    //Configure PB6 as PWM 0
-	GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_4|GPIO_PIN_5);    //Configure PE4 as PWM 4
+	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_4);    //Configure PB6 as PWM 0
+	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_5);
+
+	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_6);
+	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_7);
+
+	GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_4);
+	GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_5);
+	SysCtlDelay(3);
 
 	GPIOPinConfigure(GPIO_PB6_M0PWM0);
 	GPIOPinConfigure(GPIO_PB7_M0PWM1);
@@ -369,25 +351,24 @@ void ConfigurePWM(void){
 	GPIOPinConfigure(GPIO_PB5_M0PWM3);
 	GPIOPinConfigure(GPIO_PE4_M0PWM4);
 	GPIOPinConfigure(GPIO_PE5_M0PWM5);
+	SysCtlDelay(3);
 
 	PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT|PWM_OUT_1_BIT|PWM_OUT_2_BIT|
 							  PWM_OUT_3_BIT|PWM_OUT_4_BIT|PWM_OUT_5_BIT, true); // PWM output bits
 
 	ui32PWMClock = SysCtlClockGet();
 	pulse_per_period = ui32PWMClock / PWM_FREQUENCY;
-	ui32Load = pulse_per_period - 1;					// Calculate the period
+	ui32Load = pulse_per_period;					// Calculate the period
 
-	PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_UP_DOWN);
-	PWMGenConfigure(PWM0_BASE, PWM_GEN_1, PWM_GEN_MODE_UP_DOWN);
-	PWMGenConfigure(PWM0_BASE, PWM_GEN_2, PWM_GEN_MODE_UP_DOWN);
+	PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_UP_DOWN|PWM_GEN_MODE_NO_SYNC);
+	PWMGenConfigure(PWM0_BASE, PWM_GEN_1, PWM_GEN_MODE_UP_DOWN|PWM_GEN_MODE_NO_SYNC);
+	PWMGenConfigure(PWM0_BASE, PWM_GEN_2, PWM_GEN_MODE_UP_DOWN|PWM_GEN_MODE_NO_SYNC);
+	SysCtlDelay(3);
 
 	PWMGenPeriodSet(PWM0_BASE, PWM_GEN_0, ui32Load);
 	PWMGenPeriodSet(PWM0_BASE, PWM_GEN_1, ui32Load);
 	PWMGenPeriodSet(PWM0_BASE, PWM_GEN_2, ui32Load);
-
-	PWMGenEnable(PWM0_BASE, PWM_GEN_0);
-	PWMGenEnable(PWM0_BASE, PWM_GEN_1);
-	PWMGenEnable(PWM0_BASE, PWM_GEN_2);
+	SysCtlDelay(3);
 
 	PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, 0); // PB6
 	PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, 0); // PB7
@@ -397,6 +378,11 @@ void ConfigurePWM(void){
 
 	PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE4 pin U3 - 12
 	PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE5 pin U3 - 16
+	SysCtlDelay(3);
+
+	PWMGenEnable(PWM0_BASE, PWM_GEN_0);
+	PWMGenEnable(PWM0_BASE, PWM_GEN_1);
+	PWMGenEnable(PWM0_BASE, PWM_GEN_2);
 }
 
 //*****************************************************************************
@@ -408,50 +394,66 @@ void ConfigurePWM(void){
 void ConfigureQEI(void){
 	// PD7 = NMI = Non-Maskable Interrupt = Unlock GPIO Commit Control Register
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
 	HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
 	HWREG(GPIO_PORTD_BASE + GPIO_O_CR) |= 0x80;
 	HWREG(GPIO_PORTD_BASE + GPIO_O_AFSEL) &= ~0x80;
 	HWREG(GPIO_PORTD_BASE + GPIO_O_DEN) |= 0x80;
 	HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = 0;
+	SysCtlDelay(3);
 
 	// Motor A setup
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
 	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_7); // Configure Phase B to PC
 	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_6);
+	SysCtlDelay(3);
 	GPIOIntTypeSet(GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6, GPIO_BOTH_EDGES);
+	SysCtlDelay(3);
 	GPIOIntRegister(GPIO_PORTD_BASE, qeiDIntHandler);
-	GPIOIntEnable(GPIO_PORTD_BASE, GPIO_INT_PIN_7 | GPIO_INT_PIN_6);
+	SysCtlDelay(3);
+
 
 	// Motor B setup
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
 	GPIOPinTypeGPIOInput(GPIO_PORTC_BASE, GPIO_PIN_6); // Configure Phase B to PC
 	GPIOPinTypeGPIOInput(GPIO_PORTC_BASE, GPIO_PIN_5);
+	SysCtlDelay(3);
 	GPIOIntTypeSet(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_5, GPIO_BOTH_EDGES);
+	SysCtlDelay(3);
 	GPIOIntRegister(GPIO_PORTC_BASE, qeiCIntHandler);
-	GPIOIntEnable(GPIO_PORTC_BASE, GPIO_INT_PIN_6 | GPIO_INT_PIN_5);
+	SysCtlDelay(3);
+
 
 	// Motor C setup PCA - PHA | PCA - PHB
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+
 	GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_6); // Configure Phase B to PC
 	GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_5);
+	SysCtlDelay(3);
 	GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_6 | GPIO_PIN_5, GPIO_BOTH_EDGES);
+	SysCtlDelay(3);
 	GPIOIntRegister(GPIO_PORTA_BASE, qeiAIntHandler);
+	SysCtlDelay(3);
+
+	GPIOIntEnable(GPIO_PORTD_BASE, GPIO_INT_PIN_7 | GPIO_INT_PIN_6);
+	GPIOIntEnable(GPIO_PORTC_BASE, GPIO_INT_PIN_6 | GPIO_INT_PIN_5);
 	GPIOIntEnable(GPIO_PORTA_BASE, GPIO_INT_PIN_6 | GPIO_INT_PIN_5);
+	SysCtlDelay(3);
 }
 
 void ConfigureCtrlTimer(void){
     SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
-    IntMasterEnable();
+    SysCtlDelay(3);
     TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
+    SysCtlDelay(3);
     TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet()/CONTROL_FREQ);
-    TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet()/SIMULINK_FREQ);
+    SysCtlDelay(3);
+    IntMasterEnable();
+    SysCtlDelay(3);
     IntEnable(INT_TIMER0A);
-    IntEnable(INT_TIMER1A);
+    SysCtlDelay(3);
     TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
-    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+    SysCtlDelay(3);
     TimerEnable(TIMER0_BASE, TIMER_A);
-    TimerEnable(TIMER1_BASE, TIMER_A);
+    SysCtlDelay(3);
 }
 
 //*****************************************************************************
@@ -466,9 +468,9 @@ void ConfigureCtrlTimer(void){
 //
 //*****************************************************************************
 void ThreeStrtoInt(char* rx, int32_t* a, int32_t* b, int32_t* c){
-	uint32_t i;
-	char* strCopy = rx;
-	char A_str[16], B_str[16], C_str[16];
+	volatile uint32_t i = 0;
+	volatile char* strCopy = rx;
+	volatile char A_str[32], B_str[32], C_str[32];
 
 	for(i = 0; *strCopy != ' '; i++){
 		A_str[i] = *strCopy;
@@ -509,7 +511,6 @@ void ThreeStrtoInt(char* rx, int32_t* a, int32_t* b, int32_t* c){
 int main(void){
 	volatile char RxString[32];
 	volatile int32_t Aset = MID_POS, Bset = MID_POS, Cset = MID_POS;
-	volatile int32_t acurr, bcurr, ccurr;
 
 	FPUEnable();
 	FPULazyStackingEnable();
@@ -521,17 +522,49 @@ int main(void){
     ConfigureQEI();
     ConfigureCtrlTimer();
 
+    // for timing ISR's
+    GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_7);
+
+    // to output high
+//    GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+
+    // to output low
+//    GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
+
+//    GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+//    UARTprintf("%4d %4d %4d\n",Aset,Bset,Cset);
+//	UARTprintf("%d %d %d %d %d %d\r",aQEI_count,A_ref,bQEI_count,B_ref,cQEI_count,C_ref);
+//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
+//	while(1){}
+
     // Main program loop
     while(1){
 		UARTgets(RxString,32);
 		ThreeStrtoInt(RxString, &Aset, &Bset, &Cset);
 
-		A_ref=Aset;
-		B_ref=Bset;
-		C_ref=Cset;
+		// Check the numbers
+		IntMasterDisable();
+		if(Aset >= 0 && Aset <= 99999)
+			A_ref=Aset;
+//		else
+//			GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
 
-		ui8MainLoop_cnt++;
-		UARTprintf("%4d %4d %4d %4d %4d %4d\n",aQEI_count,Aset,bQEI_count,Bset,cQEI_count,Cset);
+		if(Bset >= 0 && Bset <= 99999)
+			B_ref=Bset;
+//			GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+//		else
+
+		if(Cset >= 0 && Cset <= 99999)
+			C_ref=Cset;
+//			GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+//		else
+		IntMasterEnable();
+
+
+//		GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+//		UARTprintf("%d %d %d %d %d %d\r",aQEI_count,A_ref,bQEI_count,B_ref,cQEI_count,C_ref);
+//		UARTprintf("%4d %4d %4d\n",aQEI_count,bQEI_count,cQEI_count);
+//		GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
 //		UARTprintf("%4d %4d %4d\n",aQEI_count,bQEI_count,cQEI_count);
     }// end while
 
