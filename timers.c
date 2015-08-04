@@ -549,8 +549,7 @@ int main(void){
 		Bcurr = bQEI_count;
 		Ccurr = cQEI_count;
 
-		UARTprintf("%4d %4d %4d\n",Acurr,Bcurr,Ccurr);
+		UARTprintf("%d %d %d\n",Acurr,Bcurr,Ccurr);
     }// end while
-
 }// end main
 
