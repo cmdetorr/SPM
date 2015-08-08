@@ -86,17 +86,18 @@ Microcontroller Connection Pinouts
 #include "driverlib/qei.h"
 #include "utils/uartstdio.h"
 
-#define PWM_FREQUENCY 19000
-#define CONTROL_FREQ 3000
+#define PWM_FREQUENCY 20000
+#define CONTROL_FREQ 2500
+#define COMM_FREQ 1000 // frequency to communicate to PC, based on simulink frequency
 
 #define MAX_PULSE 800
 
 // PID constants
-#define Kp 5.0
+#define Kp 9.0
 #define Kd 0.0
-#define Ki 0.0
+#define Ki 0.5
 
-#define MAX_ERROR Load-1
+#define MAX_ERROR 900.0
 #define MID_POS 5000
 #define MAX_POS 9999
 #define UART_SPEED 256000
@@ -114,6 +115,8 @@ volatile uint32_t ui32Load;
 volatile float I_a_prev = 0.0;
 volatile float I_b_prev = 0.0;
 volatile float I_c_prev = 0.0;
+
+volatile uint32_t test = 0x00000080;
 
 //*****************************************************************************
 //
@@ -189,10 +192,19 @@ void qeiAIntHandler(void){
 //
 //*****************************************************************************
 void ControlIntHandler(void){
+	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 
 	volatile float a_error, b_error, c_error;
 	volatile uint32_t Load = ui32Load;
+	const float Kp_A = Kp * 0.001;
+	const float Kp_B = Kp * 0.001;
+	const float Kp_C = Kp * 0.001;
+
+	const float Ki_A = Ki * 0.001;
+	const float Ki_B = Ki * 0.001;
+	const float Ki_C = Ki * 0.001;
+
 	volatile float P_a, P_b, P_c; // Proportional terms
 	volatile float D_a, D_b, D_c; // Derivative terms
 	volatile float I_a = 0.0, I_b = 0.0 , I_c = 0.0; // Integral terms
@@ -216,46 +228,51 @@ void ControlIntHandler(void){
     b_error = b_set - bcurr;
     c_error = c_set - ccurr;
 
-    if(a_error > MAX_PULSE) a_error = MAX_PULSE;
-    if(a_error < -MAX_PULSE) a_error = -MAX_PULSE;
+//    if(a_error > MAX_PULSE) a_error = MAX_PULSE;
+//    if(a_error < -MAX_PULSE) a_error = -MAX_PULSE;
+//
+//    if(b_error > MAX_PULSE) b_error = MAX_PULSE;
+//    if(b_error < -MAX_PULSE) b_error = -MAX_PULSE;
+//
+//    if(c_error > MAX_PULSE) c_error = MAX_PULSE;
+//    if(c_error < -MAX_PULSE) c_error = -MAX_PULSE;
 
-    if(b_error > MAX_PULSE) b_error = MAX_PULSE;
-    if(b_error < -MAX_PULSE) b_error = -MAX_PULSE;
-
-    if(c_error > MAX_PULSE) c_error = MAX_PULSE;
-    if(c_error < -MAX_PULSE) c_error = -MAX_PULSE;
-
-    P_a = Kp * a_error;
-    P_b = Kp * b_error;
-    P_c = Kp * c_error;
+    P_a = Kp_A * a_error;
+    P_b = Kp_B * b_error;
+    P_c = Kp_C * c_error;
 
     // anti windup
-    if (fabs(a_error) < MAX_ERROR){
-		I_a = Ki * a_error * Ti + I_a_prev;
+//    if (fabs(a_error) < MAX_ERROR){
+//		I_a = Ki * a_error * Ti + I_a_prev;
 //		if(I_a >= MAX_ERROR) I_a = (float)MAX_ERROR;
 //		if(I_a <= (float)-MAX_ERROR)I_a = (float)-MAX_ERROR;
-		I_a_prev = I_a;
-    }
-
-    if (fabs(b_error) < MAX_ERROR){
-		I_b = Ki * b_error * Ti + I_b_prev;
-
+//		I_a_prev = I_a;
+//    }
+//
+//    if (fabs(b_error) < MAX_ERROR){
+//		I_b = Ki * b_error * Ti + I_b_prev;
+//
 //		if(I_b >= MAX_ERROR) I_b = MAX_ERROR;
 //		if(I_b <= -MAX_ERROR)I_b = -MAX_ERROR;
-		I_b_prev = I_b;
-    }
-
-    if (fabs(c_error) < MAX_ERROR){
-		I_c = Ki * c_error * Ti + I_c_prev;
-
+//		I_b_prev = I_b;
+//    }
+//
+//    if (fabs(c_error) < MAX_ERROR){
+//		I_c = Ki * c_error * Ti + I_c_prev;
+//
 //		if(I_c >= MAX_ERROR) I_c = MAX_ERROR;
 //		if(I_c <= -MAX_ERROR)I_c = -MAX_ERROR;
-		I_c_prev = I_c;
-    }
+//		I_c_prev = I_c;
+//    }
 
-    a_duty = (P_a+I_a) * 0.001;
-    b_duty = (P_b+I_b) * 0.001;
-    c_duty = (P_c+I_c) * 0.001;
+//    a_duty = P_a+I_a;
+//    b_duty = P_b+I_b;
+//    c_duty = P_c+I_c;
+
+    a_duty = P_a;
+    b_duty = P_b;
+    c_duty = P_c;
+
 
     load_A = (uint32_t)(fabs(a_duty) * Load);
     load_B = (uint32_t)(fabs(b_duty) * Load);
@@ -269,8 +286,7 @@ void ControlIntHandler(void){
 	if (a_duty < 0.0){
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, load_A); 	// PB6
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, 0); 			// PB7
-	}
-	else{
+	}else{
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, 0); 			// PB6
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0, load_A); 	// PB7
 	}
@@ -278,22 +294,19 @@ void ControlIntHandler(void){
 	if(b_duty < 0.0){
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0); // PB4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, load_B); // PB5
-//		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0); // PB5
-	}
-	else{
+	}else{
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, load_B); // PB4
-//		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0); // PB4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0); // PB5
 	}
 
 	if(c_duty < 0.0){
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, 0); // PE4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, load_C); // PE5
-	}
-	else{
+	}else{
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, load_C); // PE4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE5
 	}
+	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
 
 }// end control
 
@@ -364,7 +377,7 @@ void ConfigurePWM(void){
 	PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT|PWM_OUT_1_BIT|PWM_OUT_2_BIT|
 							  PWM_OUT_3_BIT|PWM_OUT_4_BIT|PWM_OUT_5_BIT, true); // PWM output bits
 
-	ui32PWMClock = SysCtlClockGet();
+	ui32PWMClock = ROM_SysCtlClockGet();
 	ui32Load = ui32PWMClock / PWM_FREQUENCY;
 
 	PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_UP_DOWN|PWM_GEN_MODE_NO_SYNC);
@@ -445,19 +458,34 @@ void ConfigureQEI(void){
 
 void ConfigureCtrlTimer(void){
     SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+    TimerDisable(TIMER0_BASE, TIMER_A);
+    TimerDisable(TIMER1_BASE, TIMER_A);
     SysCtlDelay(10);
     TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
+    TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC);
     SysCtlDelay(10);
-    TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet()/CONTROL_FREQ);
+    TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet()/CONTROL_FREQ);
+    TimerLoadSet(TIMER1_BASE, TIMER_A, ROM_SysCtlClockGet()/COMM_FREQ);
     SysCtlDelay(10);
     IntMasterEnable();
     SysCtlDelay(10);
     IntEnable(INT_TIMER0A);
+    IntEnable(INT_TIMER1A);
     SysCtlDelay(10);
     TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
     SysCtlDelay(10);
     TimerEnable(TIMER0_BASE, TIMER_A);
-    SysCtlDelay(10);
+//    TimerEnable(TIMER1_BASE, TIMER_A);
+}
+
+void commHandler(void){
+	TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+//	test^= 0x00000080;
+//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+	UARTprintf("%d %d %d\n",aQEI_count,bQEI_count,cQEI_count);
+//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
 }
 
 //*****************************************************************************
@@ -522,34 +550,30 @@ int main(void){
 	SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 	SysCtlDelay(10);
 
-	clock_number=SysCtlClockGet();
+	clock_number =  ROM_SysCtlClockGet()/COMM_FREQ;
 
     ConfigureUART();
     ConfigurePWM();
     ConfigureQEI();
     ConfigureCtrlTimer();
 
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_7);
+
+    UARTgets(RxString,32); // waits here to get the numbers
+    TimerEnable(TIMER1_BASE, TIMER_A);
+
     // Main program loop
     while(1){
-		UARTgets(RxString,32);
+		UARTgets(RxString,32); // waits here to get the numbers
+
+		//Converts the numbers
 		ThreeStrtoInt(RxString, &Aset, &Bset, &Cset);
 
 		// Check the numbers
-		if(Aset >= 0 && Aset <= 9999){
-			A_ref=Aset;
-		}
-		if(Bset >= 0 && Bset <= 9999){
-			B_ref=Bset;
-		}
-		if(Cset >= 0 && Cset <= 9999){
-			C_ref=Cset;
-		}
-
-		Acurr = aQEI_count;
-		Bcurr = bQEI_count;
-		Ccurr = cQEI_count;
-
-		UARTprintf("%d %d %d\n",Acurr,Bcurr,Ccurr);
+		if(Aset >= 0 && Aset <= 9999) A_ref=Aset;
+		if(Bset >= 0 && Bset <= 9999) B_ref=Bset;
+		if(Cset >= 0 && Cset <= 9999) C_ref=Cset;
     }// end while
 }// end main
 
