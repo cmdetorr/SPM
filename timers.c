@@ -192,7 +192,7 @@ void qeiAIntHandler(void){
 //
 //*****************************************************************************
 void ControlIntHandler(void){
-	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
+//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, GPIO_PIN_7);
 	TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 
 	volatile float a_error, b_error, c_error;
@@ -306,7 +306,7 @@ void ControlIntHandler(void){
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_5, load_C); // PE4
 		PWMPulseWidthSet(PWM0_BASE, PWM_OUT_4, 0); // PE5
 	}
-	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
+//	GPIOPinWrite(GPIO_PORTA_BASE,GPIO_PIN_7, 0);
 
 }// end control
 
